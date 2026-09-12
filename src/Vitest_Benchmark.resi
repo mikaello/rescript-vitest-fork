@@ -1,5 +1,3 @@
-type bench
-
 type suiteOptions = {
   skip?: bool,
   only?: bool,
@@ -15,13 +13,7 @@ type benchOptions = {
 }
 
 module type Runner = {
-  let describe: (
-    string,
-    ~skip: bool=?,
-    ~only: bool=?,
-    ~todo: bool=?,
-    unit => unit,
-  ) => unit
+  let describe: (string, ~skip: bool=?, ~only: bool=?, ~todo: bool=?, unit => unit) => unit
   let bench: (
     string,
     ~time: int=?,
@@ -29,7 +21,7 @@ module type Runner = {
     ~throws: bool=?,
     ~warmupTime: int=?,
     ~warmupIterations: int=?,
-    bench => unit,
+    unit => unit,
   ) => unit
   let benchAsync: (
     string,
@@ -38,7 +30,7 @@ module type Runner = {
     ~throws: bool=?,
     ~warmupTime: int=?,
     ~warmupIterations: int=?,
-    bench => promise<unit>,
+    unit => promise<unit>,
   ) => unit
 }
 

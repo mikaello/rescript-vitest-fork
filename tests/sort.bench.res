@@ -16,5 +16,9 @@ describe("sort", () => {
     ->ignore
   })
 
+  benchAsync("async", ~time=10, ~iterations=1, async _ => {
+    await Promise.resolve()
+  })
+
   Todo.bench("todo")
 })

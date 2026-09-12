@@ -1,7 +1,5 @@
 // TODO: import rescript-tinybench
 
-type bench
-
 type suiteOptions = {
   skip?: bool,
   only?: bool,
@@ -16,24 +14,28 @@ type benchOptions = {
   warmupIterations?: int,
 }
 
+type benchmarkContext
+type benchmarkRegistration
+
 type suiteDef = (string, suiteOptions, unit => unit) => unit
-type benchDef = (string, bench => unit, benchOptions) => unit
-type benchAsyncDef = (string, bench => promise<unit>, benchOptions) => unit
+type testDef = (string, suiteOptions, benchmarkContext => promise<unit>) => unit
+
+@send
+external register: (benchmarkContext, string, unit => unit) => benchmarkRegistration = "bench"
+
+@send
+external registerAsync: (benchmarkContext, string, unit => promise<unit>) => benchmarkRegistration =
+  "bench"
+
+@send external run: (benchmarkRegistration, benchOptions) => promise<unit> = "run"
 
 module type Bindings = {
   let describe: suiteDef
-  let bench: benchDef
-  let benchAsync: benchAsyncDef
+  let test: testDef
 }
 
 module type Runner = {
-  let describe: (
-    string,
-    ~skip: bool=?,
-    ~only: bool=?,
-    ~todo: bool=?,
-    unit => unit,
-  ) => unit
+  let describe: (string, ~skip: bool=?, ~only: bool=?, ~todo: bool=?, unit => unit) => unit
   let bench: (
     string,
     ~time: int=?,
@@ -41,7 +43,7 @@ module type Runner = {
     ~throws: bool=?,
     ~warmupTime: int=?,
     ~warmupIterations: int=?,
-    bench => unit,
+    unit => unit,
   ) => unit
   let benchAsync: (
     string,
@@ -50,7 +52,7 @@ module type Runner = {
     ~throws: bool=?,
     ~warmupTime: int=?,
     ~warmupIterations: int=?,
-    bench => promise<unit>,
+    unit => promise<unit>,
   ) => unit
 }
 
@@ -76,7 +78,11 @@ module MakeRunner = (Bindings: Bindings) => {
     ~warmupTime=?,
     ~warmupIterations=?,
     callback,
-  ) => Bindings.bench(name, callback, {?time, ?iterations, ?throws, ?warmupTime, ?warmupIterations})
+  ) =>
+    Bindings.test(name, {}, async context => {
+      let registration = context->register(name, callback)
+      await registration->run({?time, ?iterations, ?throws, ?warmupTime, ?warmupIterations})
+    })
 
   @inline
   let benchAsync = (
@@ -88,7 +94,10 @@ module MakeRunner = (Bindings: Bindings) => {
     ~warmupIterations=?,
     callback,
   ) =>
-    Bindings.benchAsync(name, callback, {?time, ?iterations, ?throws, ?warmupTime, ?warmupIterations})
+    Bindings.test(name, {}, async context => {
+      let registration = context->registerAsync(name, callback)
+      await registration->run({?time, ?iterations, ?throws, ?warmupTime, ?warmupIterations})
+    })
 }
 
 include MakeRunner({
@@ -96,78 +105,67 @@ include MakeRunner({
   external describe: suiteDef = "describe"
 
   @module("vitest") @val
-  external bench: benchDef = "bench"
-
-  @module("vitest") @val
-  external benchAsync: benchAsyncDef = "bench"
+  external test: testDef = "test"
 })
 
 module Only = {
   type only_describe
-  type only_bench
+  type only_test
 
   %%private(
     @module("vitest") @val
     external only_describe: only_describe = "describe"
 
     @module("vitest") @val
-    external only_bench: only_bench = "bench"
+    external only_test: only_test = "test"
   )
 
   @get
   external describe: only_describe => suiteDef = "only"
 
   @get
-  external bench: only_bench => benchDef = "only"
-
-  @get
-  external benchAsync: only_bench => benchAsyncDef = "only"
+  external test: only_test => testDef = "only"
 
   include MakeRunner({
     let describe = only_describe->describe
-    let bench = only_bench->bench
-    let benchAsync = only_bench->benchAsync
+    let test = only_test->test
   })
 }
 
 module Skip = {
   type skip_describe
-  type skip_bench
+  type skip_test
 
   %%private(
     @module("vitest") @val
     external skip_describe: skip_describe = "describe"
 
     @module("vitest") @val
-    external skip_bench: skip_bench = "bench"
+    external skip_test: skip_test = "test"
   )
 
   @get
   external describe: skip_describe => suiteDef = "skip"
 
   @get
-  external bench: skip_bench => benchDef = "skip"
-
-  @get
-  external benchAsync: skip_bench => benchAsyncDef = "skip"
+  external test: skip_test => testDef = "skip"
 
   include MakeRunner({
     let describe = skip_describe->describe
-    let bench = skip_bench->bench
-    let benchAsync = skip_bench->benchAsync
+    let test = skip_test->test
   })
 }
 
 module Todo = {
   type todo_describe
-  type todo_bench
+  type todo_test
 
   %%private(
     @module("vitest") @val
     external todo_describe: todo_describe = "describe"
 
     @module("vitest") @val
-    external todo_bench: todo_bench = "bench"
+    external todo_test: todo_test = "test"
   )
 
   @send
@@ -176,12 +174,12 @@ module Todo = {
   let describe = name => todo_describe->describe(name)
 
   @send
-  external bench: (todo_bench, string) => unit = "todo"
+  external bench: (todo_test, string) => unit = "todo"
   @inline
-  let bench = name => todo_bench->bench(name)
+  let bench = name => todo_test->bench(name)
 
   @send
-  external benchAsync: (todo_bench, string) => unit = "todo"
+  external benchAsync: (todo_test, string) => unit = "todo"
   @inline
-  let benchAsync = name => todo_bench->benchAsync(name)
+  let benchAsync = name => todo_test->benchAsync(name)
 }
